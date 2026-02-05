@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>稽核監控中心 - 中清行館</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; overflow-x: hidden; }
+        .modal-active { opacity: 1; pointer-events: auto; }
+        .modal-inactive { opacity: 0; pointer-events: none; }
+        
+        /* 極致緊湊佈局 (V1.7.1) */
+        .compact-table th, .compact-table td { padding: 0.4rem 0.3rem !important; border: 1px solid #f1f5f9; vertical-align: middle; }
+        
+        .q-col { 
+            min-width: 45px; 
+            max-width: 65px;
+            text-align: center; 
+            font-weight: 800; 
+            font-size: 8px; 
+            letter-spacing: -0.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        @keyframes pulse-red-alert { 
+            0% { background-color: #ef4444; transform: scale(1); } 
+            50% { background-color: #dc2626; transform: scale(1.02); } 
+            100% { background-color: #ef4444; transform: scale(1); } 
+        }
+        .alarm-banner { 
+            animation: pulse-red-alert 1.5s infinite ease-in-out; 
+            box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.5); 
+            border: 2px solid white;
+        }
+
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; padding: 0; }
+            .print-compact { border-radius: 0 !important; box-shadow: none !important; border: none !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; }
+            .compact-table td { font-size: 8px !important; line-height: 1.1; -webkit-print-color-adjust: exact; }
+            .compact-table th { font-size: 8px !important; background: #f8fafc !important; -webkit-print-color-adjust: exact; }
+            .status-tag { color: white !important; border: none !important; -webkit-print-color-adjust: exact; }
+            .bg-green-50 { background-color: #f0fdf4 !important; }
+            .bg-yellow-50 { background-color: #fefce8 !important; }
+            .bg-red-50 { background-color: #fef2f2 !important; }
+            @page { size: A2 landscape; margin: 0.5cm; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-2 md:p-4">
+
+<!-- 即時警報顯示區 -->
+<div id="alarmContainer" class="fixed top-4 left-1/2 -translate-x-1/2 z-[10001] w-full max-w-2xl pointer-events-none no-print"></div>
+
+<div id="adminApp" class="max-w-[2100px] mx-auto print-compact">
+    <!-- 登入介面 -->
+    <div id="loginOverlay" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[9999] no-print transition-all duration-500">
+        <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center border-t-8 border-blue-600">
+            <h2 class="text-2xl font-black mb-2 text-slate-800 italic uppercase tracking-tighter">Admin Dashboard</h2>
+            <p class="text-[10px] text-slate-400 mb-6 font-bold uppercase">Zhongqing Monitor Station</p>
+            <div class="relative mb-4">
+                <input type="password" id="loginInput" placeholder="輸入密碼驗證" class="w-full p-4 border-2 rounded-2xl text-center text-xl font-bold outline-none focus:border-blue-500 shadow-inner transition-all focus:ring-4 focus:ring-blue-100">
+            </div>
+            <button onclick="handleLogin()" id="loginBtn" class="w-full bg-blue-600 text-white font-black py-4 rounded-2xl active:scale-95 transition hover:bg-blue-700 shadow-lg mb-4">進入監控系統</button>
+            <div id="initDiagnostics" class="space-y-1">
+                <p id="loginStatus" class="text-[10px] text-slate-400 font-mono uppercase tracking-widest italic">Authenticating...</p>
+                <div id="authDebug" class="text-[9px] text-red-500 font-bold hidden border border-red-50 p-2 rounded-lg bg-red-50"></div>
+            </div>
+        </div>
+    </div>
+
+    <header class="flex flex-col md:flex-row justify-between items-center mb-4 gap-2 no-print">
+        <div>
+            <h1 class="text-2xl font-black text-slate-900 uppercase">服務稽核報表 <span id="connTag" class="text-[10px] bg-slate-200 px-2 py-1 rounded ml-2 font-mono uppercase italic"></span></h1>
+            <p class="text-slate-400 text-xs font-bold italic">即時監控預警系統 V1.7.1 (前端即時連線模式)</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="exportReport()" class="bg-white border-2 px-5 py-2 rounded-xl font-black shadow-sm text-sm hover:bg-slate-50 transition">匯出 A2 報表</button>
+            <button onclick="signOutAdmin()" class="bg-slate-100 px-3 py-2 rounded-xl font-bold text-slate-400 text-xs hover:bg-red-50 hover:text-red-400 transition">登出</button>
+        </div>
+    </header>
+
+    <section class="bg-white p-4 rounded-3xl shadow-sm border mb-4 no-print grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+        <div><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">開始日期</label><input type="date" id="filterStart" onchange="filterData()" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-bold"></div>
+        <div><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">結束日期</label><input type="date" id="filterEnd" onchange="filterData()" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-bold"></div>
+        <div><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">篩選師傅</label><select id="filterMasseur" onchange="filterData()" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-bold"><option value="all">所有師傅</option></select></div>
+        <button onclick="resetFilters()" class="bg-slate-100 font-black py-2 rounded-lg text-slate-600 text-sm">重置預設</button>
+    </section>
+
+    <!-- 統計概覽 -->
+    <div class="grid grid-cols-2 gap-4 mb-4 no-print">
+        <div class="bg-white p-4 rounded-3xl shadow-sm border flex justify-between items-center transition-all">
+            <div><p class="text-slate-400 text-[10px] font-bold uppercase tracking-tighter">本期回覆總量</p><h3 id="statTotal" class="text-3xl font-black italic text-blue-600 leading-none">0</h3></div>
+            <div id="loadingSpin" class="animate-spin text-blue-600">⌛</div>
+        </div>
+        <div id="alarmCountBox" class="bg-white p-4 rounded-3xl shadow-sm border-2 border-slate-100 transition-all">
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-tighter">異常待處置</p>
+            <h3 id="activeAlarmNum" class="text-3xl font-black italic text-slate-300 leading-none">0</h3>
+        </div>
+    </div>
+
+    <!-- 數據表格 -->
+    <div class="bg-white rounded-3xl shadow-sm border overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-[1600px] compact-table">
+                <thead>
+                    <tr class="text-[8px] font-black text-slate-400 uppercase tracking-tighter border-b bg-slate-50/50">
+                        <th class="p-1 w-8 text-center">序</th>
+                        <th class="p-1 w-24">系統時間</th>
+                        <th class="p-1 w-12 text-center">師傅</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q1 介紹</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q2 力道</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q3 異味</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q4 時間</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q5 禮貌</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q6 觸碰</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q7 禁動</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q8 打卡</th>
+                        <th class="p-1 q-col text-green-700 bg-green-50/30">Q9 名片</th>
+                        <th class="p-1 q-col text-red-700 bg-red-50/30">Q10 老點</th>
+                        <th class="p-1 w-28">顧客資訊</th>
+                        <th class="p-1 w-20 text-center">行銷反饋</th>
+                        <th class="p-1 text-center">狀態</th>
+                        <th class="p-1">管理備註</th>
+                        <th class="p-1 no-print">管理</th>
+                    </tr>
+                </thead>
+                <tbody id="reportTableBody" class="text-[9px] divide-y"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 詳情 Modal -->
+    <div id="detailModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm modal-inactive z-[10000] flex items-center justify-center p-4 transition-all duration-300 no-print">
+        <div class="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl max-h-[95vh] overflow-y-auto">
+            <div class="p-8 border-b flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-10">
+                <h3 class="text-xl font-black italic text-slate-800"><span id="modalId" class="bg-blue-600 text-white px-2 py-1 rounded-lg text-xs mr-2 not-italic">00</span>稽核數據處置</h3>
+                <button onclick="closeModal()" class="w-10 h-10 bg-slate-100 rounded-full font-bold">✕</button>
+            </div>
+            <div id="modalContent" class="p-8 space-y-4"></div>
+            <div class="p-8 bg-slate-50 border-t space-y-4">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">管理者處置說明</p>
+                <textarea id="adminRemarkInput" rows="3" placeholder="請填寫處理情況..." class="w-full p-4 border rounded-2xl text-sm outline-none bg-white"></textarea>
+                <div class="flex gap-3">
+                    <button id="resolveBtn" class="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition hover:bg-blue-700">標記為「處理完成」</button>
+                    <button onclick="closeModal()" class="px-6 bg-slate-200 text-slate-600 font-bold rounded-2xl">暫不處理</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, onSnapshot, query, doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCuytMbR0wfPk0vChxqI66Zci0uJtGiizE",
+        authDomain: "survey-c3aa5.firebaseapp.com",
+        projectId: "survey-c3aa5",
+        storageBucket: "survey-c3aa5.firebasestorage.app",
+        messagingSenderId: "874594469122",
+        appId: "1:874594469122:web:2b2c1208b20d2095b9ae1b",
+        measurementId: "G-B5T1318ZR4"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const collectionPath = ['apps', 'zhongqing-v1', 'surveys'];
+
+    let rawData = [];
+    let currentDocId = null;
+    let syncStarted = false;
+
+    // --- 全量語法權杖池 V1.7.1 ---
+    // 核心修正：加入英文 "No odor" 與日文 "少し危ない" 至正確池中
+    const posKeywords = ["主動介紹詢問", "主動詢問調整", "沒有異味", "服務很好", "良好有禮", "專業得體", "完全沒有", "熱情主動", "一定老點", "Definitely", "Proactive", "Excellent", "Polite", "Professional", "None", "No odor", "積極的", "丁寧", "適切", "なかった", "必ず指名", "적극 안내", "적극 확인", "없음", "만족", "정중함", "전문적", "꼭 지명"];
+    const neuKeywords = ["後來才問", "被動回應", "稍微有點", "普通尚可", "有點尷尬", "有點危險", "非常被動", "要了才給", "再試試看", "Maybe", "Later", "Passive", "Average", "Awkward", "Risky", "Requested", "後で", "受動的", "少し", "普通", "氣まずい", "少し危ない", "少し危難", "また試す", "求めたら", "나중에", "수動的", "약간", "보통", "당황함", "위험", "다시 시度", "요청 시"];
+    const negKeywords = ["完全沒問", "完全不問", "味道很重", "感覺很差", "言語不當", "非常危險", "完全沒說", "沒有給名片", "絕對不會", "No", "Strong", "Poor", "Impolite", "Dangerous", "Never", "非常に", "悪い", "失礼", "不快", "非常に危險", "しない", "심함", "불만", "무례", "불쾌", "매우 위험", "안 함"];
+
+    const labels = { q1: "Q1. 開始介紹", q2: "Q2. 力道調整", q3: "Q3. 異味/煙味", q4: "Q4. 時間掌握", q5: "Q5. 服務禮貌", q6: "Q6. 肢體觸碰", q7: "Q7. 禁止動作", q8: "Q8. 打卡推廣", q9: "Q9. 提供名片", q10: "Q10. 老點意願" };
+
+    function setDateRangeDefaults() {
+        const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+        const toISO = (d) => d.toISOString().split('T')[0];
+        document.getElementById('filterStart').value = toISO(yesterday); document.getElementById('filterEnd').value = toISO(today);
+    }
+
+    window.exportReport = () => {
+        const start = document.getElementById('filterStart').value;
+        const end = document.getElementById('filterEnd').value;
+        const originalTitle = document.title;
+        document.title = `${start}至${end}_中清店`;
+        window.print();
+        setTimeout(() => { document.title = originalTitle; }, 1000);
+    };
+
+    window.handleLogin = async () => { 
+        const pass = document.getElementById('loginInput').value;
+        const statusText = document.getElementById('loginStatus');
+        if(pass === 'admin888') { 
+            try {
+                await setPersistence(auth, browserLocalPersistence);
+                sessionStorage.setItem('adminVerified', 'true');
+                statusText.innerText = "驗證通過，正在建立數據..."; 
+                statusText.classList.replace('text-slate-400', 'text-blue-500');
+                document.getElementById('loginBtn').disabled = true;
+                await initAuth(); 
+                if (auth.currentUser) startSync();
+            } catch (err) { alert("無法設定長駐登入"); }
+        } else { alert("驗證密碼錯誤"); }
+    };
+
+    const initAuth = async () => {
+        try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                try { await signInWithCustomToken(auth, __initial_auth_token); } catch (e) { await signInAnonymously(auth); }
+            } else { await signInAnonymously(auth); }
+        } catch (e) { console.error("Auth Fail"); }
+    };
+
+    onAuthStateChanged(auth, user => { 
+        const isVerified = sessionStorage.getItem('adminVerified') === 'true';
+        const info = document.getElementById('connTag');
+        if(user && isVerified) {
+            info.innerText = "LIVE SYNCED";
+            info.className = "text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded font-black italic";
+            startSync();
+        } else {
+            info.innerText = "";
+            info.className = "";
+        }
+    });
+
+    window.signOutAdmin = async () => {
+        sessionStorage.removeItem('adminVerified');
+        await signOut(auth);
+        location.reload();
+    };
+
+    function startSync() {
+        if (!auth.currentUser || sessionStorage.getItem('adminVerified') !== 'true' || syncStarted) return;
+        syncStarted = true;
+        
+        onSnapshot(collection(db, ...collectionPath), (sn) => {
+            rawData = sn.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            updateDropdown(); filterData();
+            document.getElementById('loadingSpin').classList.add('hidden');
+            
+            const overlay = document.getElementById('loginOverlay');
+            if (overlay) {
+                overlay.style.opacity = '0';
+                setTimeout(() => overlay.classList.add('hidden'), 500);
+            }
+        }, (err) => {
+            console.error("Firestore Error:", err);
+            document.getElementById('authDebug').innerText = `讀取失敗: 權限不足 (403)`;
+            document.getElementById('authDebug').classList.remove('hidden');
+            syncStarted = false; 
+            document.getElementById('loginBtn').disabled = false;
+        });
+    }
+
+    window.filterData = () => {
+        const startVal = document.getElementById('filterStart').value;
+        const endVal = document.getElementById('filterEnd').value;
+        const masVal = document.getElementById('filterMasseur').value;
+        let filtered = rawData.filter(d => {
+            const targetDate = d.serviceDate || (d.createdAt ? new Date(d.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+            if (!targetDate) return true; 
+            const matchStart = startVal ? (targetDate >= startVal) : true;
+            const matchEnd = endVal ? (targetDate <= endVal) : true;
+            const matchMas = (masVal === 'all') ? true : (String(d.masseurId) === masVal);
+            return matchStart && matchEnd && matchMas;
+        });
+        filtered.sort((a, b) => {
+            const idA = parseInt(a.masseurId) || 0; const idB = parseInt(b.masseurId) || 0;
+            if (idA !== idB) return idA - idB;
+            return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+        });
+        updateAlarmUI(filtered); renderTable(filtered);
+    };
+
+    // 核心修正：確保 handleAlarmClick 被綁定至 window 且 ID 路徑正確
+    function updateAlarmUI(data) {
+        const container = document.getElementById('alarmContainer');
+        const pendingAlarms = data.filter(item => Object.values(item.ratings || {}).some(val => negKeywords.includes(val)) && item.adminStatus !== 'resolved');
+        document.getElementById('activeAlarmNum').innerText = pendingAlarms.length;
+        
+        if (pendingAlarms.length > 0) {
+            const latest = pendingAlarms[0];
+            container.innerHTML = `
+                <div class="m-2 pointer-events-auto">
+                    <div class="alarm-banner text-white p-4 rounded-2xl flex justify-between items-center max-w-xl mx-auto">
+                        <div class="flex items-center gap-3 text-sm">
+                            <span>⚠️</span>
+                            <div>
+                                <p class="font-black text-xs md:text-sm">師傅 ${latest.masseurId} 發現稽核異常項目！</p>
+                                <p class="text-[9px] opacity-90">顧客：${latest.customerName} | 日期：${latest.serviceDate || '今日'}</p>
+                            </div>
+                        </div>
+                        <button onclick="window.handleAlarmClick('${latest.id}')" class="bg-white text-red-600 px-4 py-2 rounded-xl font-black text-xs hover:scale-105 transition shadow-sm">立即處置</button>
+                    </div>
+                </div>`;
+        } else {
+            container.innerHTML = '';
+        }
+    }
+
+    // 將指令轉發至主處理程序
+    window.handleAlarmClick = (id) => {
+        window.showDetail(id, 'ALARM');
+    };
+
+    function renderTable(data) {
+        document.getElementById('statTotal').innerText = data.length;
+        document.getElementById('reportTableBody').innerHTML = data.map((d, i) => {
+            const ts = d.createdAt ? new Date(d.createdAt.seconds * 1000).toLocaleString('zh-TW', { hour12: false }) : 'Sync';
+            const r = d.ratings || {};
+            const isCritical = Object.values(r).some(v => negKeywords.includes(v));
+            const isResolved = d.adminStatus === 'resolved';
+            
+            let label = '正常', color = 'bg-green-600';
+            if (isResolved) { label = '完成'; color = 'bg-blue-600'; }
+            else if (isCritical) { label = '異常'; color = 'bg-red-600 animate-pulse'; }
+            
+            const getQStyle = (val) => {
+                if (!val || val === '-') return 'text-slate-200';
+                if (negKeywords.includes(val)) return 'text-red-700 bg-red-50 font-black';
+                if (neuKeywords.includes(val)) return 'text-yellow-700 bg-yellow-50 font-bold';
+                if (posKeywords.includes(val)) return 'text-green-700 bg-green-50 font-bold';
+                return 'text-slate-600';
+            };
+
+            let marketingLabel = '<span class="text-slate-200">-</span>';
+            if (d.marketingAction === 'Reviewed') marketingLabel = '<span class="text-amber-500 font-bold">★ 已點評論</span>';
+            if (d.marketingAction === 'Dismissed') marketingLabel = '<span class="text-slate-400">下次再評</span>';
+
+            return `<tr>
+                <td class="p-1 text-center font-black text-slate-300">${i + 1}</td>
+                <td class="p-1 font-mono text-[8px] text-slate-400">系:${ts}<br>服:${d.serviceDate || '-'}</td>
+                <td class="p-1 text-center"><span class="bg-slate-900 text-white px-1.5 py-0.5 rounded text-[10px] font-black italic">${d.masseurId}</span></td>
+                <td class="p-1 q-col ${getQStyle(r.q1)}">${r.q1 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q2)}">${r.q2 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q3)}">${r.q3 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q4)}">${r.q4 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q5)}">${r.q5 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q6)}">${r.q6 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q7)}">${r.q7 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q8)}">${r.q8 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q9)}">${r.q9 || '-'}</td>
+                <td class="p-1 q-col ${getQStyle(r.q10)}">${r.q10 || '-'}</td>
+                <td class="p-1 font-bold text-slate-700 leading-tight">${d.customerName}<br><span class="text-[8px] text-slate-400 font-normal">${d.customerPhone || ''}</span></td>
+                <td class="p-1 text-center text-[8px]">${marketingLabel}</td>
+                <td class="p-1 text-center"><span class="status-tag text-[7px] px-1.5 py-0.5 rounded-full font-black text-white ${color}">${label}</span></td>
+                <td class="p-1 italic text-slate-500 max-w-[100px] truncate" title="${d.adminRemark || ''}">${d.adminRemark || '待標...'}</td>
+                <td class="p-1 no-print text-center"><button onclick="window.showDetail('${d.id}', ${i + 1})" class="bg-slate-800 text-white px-2 py-0.5 rounded-lg text-[9px] font-black hover:bg-blue-700 transition">管理</button></td>
+            </tr>`;
+        }).join('');
+    }
+
+    function updateDropdown() {
+        const ids = [...new Set(rawData.map(d => String(d.masseurId)))].sort((a,b) => parseInt(a)-parseInt(b));
+        document.getElementById('filterMasseur').innerHTML = '<option value="all">所有師傅</option>' + ids.map(id => `<option value="${id}">師傅 ${id}</option>`).join('');
+    }
+
+    document.getElementById('resolveBtn').onclick = async () => {
+        if(!currentDocId) return;
+        const btn = document.getElementById('resolveBtn'); btn.disabled = true;
+        try {
+            await updateDoc(doc(db, ...collectionPath, currentDocId), { adminStatus: 'resolved', adminRemark: document.getElementById('adminRemarkInput').value || "管理者已處理。", handledAt: serverTimestamp() });
+            closeModal();
+        } catch (e) { alert("更新失敗！"); } finally { btn.disabled = false; }
+    };
+
+    window.showDetail = (docId, seq) => {
+        const item = rawData.find(d => d.id === docId); if(!item) return;
+        currentDocId = docId; document.getElementById('modalId').innerText = (seq === 'ALARM') ? '警報' : `${seq}`;
+        document.getElementById('adminRemarkInput').value = item.adminRemark || "";
+        const r = item.ratings || {};
+        document.getElementById('modalContent').innerHTML = `<div class="grid grid-cols-2 gap-4"><div class="bg-slate-50 p-4 rounded-2xl border"><p class="text-[10px] text-slate-400 font-black mb-1 uppercase">稽核師傅</p><p class="text-2xl font-black text-blue-600 italic">${item.masseurId}</p></div><div class="bg-slate-50 p-4 rounded-2xl border"><p class="text-[10px] text-slate-400 font-black mb-1 uppercase">檢測結果</p><p class="text-lg font-bold ${Object.values(r).some(v=>negKeywords.includes(v))?'text-red-500':'text-green-600'}">${Object.values(r).some(v=>negKeywords.includes(v))?'發現異常項目':'數據正常'}</p></div></div><div class="space-y-1">${Object.keys(labels).map(k => `<div class="flex justify-between items-center p-2 border rounded-xl ${negKeywords.includes(r[k]) ? 'bg-red-50 border-red-200' : 'bg-white'} shadow-sm"><span class="text-slate-600 font-bold text-[10px]">${labels[k]}</span><span class="font-black text-[10px] ${negKeywords.includes(r[k]) ? 'text-red-600' : 'text-blue-600'}">${r[k] || '-'}</span></div>`).join('')}</div><div class="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p class="text-[9px] font-black text-amber-600 mb-1 uppercase">顧客建議原文</p><p class="text-xs text-slate-700 italic">"${item.suggestions || "無。"}"</p></div>`;
+        document.getElementById('detailModal').classList.replace('modal-inactive', 'modal-active');
+    };
+
+    window.closeModal = () => { document.getElementById('detailModal').classList.replace('modal-active', 'modal-inactive'); currentDocId = null; };
+    window.resetFilters = () => { setDateRangeDefaults(); document.getElementById('filterMasseur').value = 'all'; filterData(); };
+    window.onload = () => { setDateRangeDefaults(); document.getElementById('loginInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); }); document.getElementById('loginInput').focus(); };
+</script>
+</body>
+</html>
