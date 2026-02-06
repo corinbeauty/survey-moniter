@@ -11,7 +11,7 @@
         .modal-active { opacity: 1; pointer-events: auto; }
         .modal-inactive { opacity: 0; pointer-events: none; }
         
-        /* 極致緊湊佈局 (V1.7.1) */
+        /* 極致緊湊佈局 (V1.7.5) */
         .compact-table th, .compact-table td { padding: 0.4rem 0.3rem !important; border: 1px solid #f1f5f9; vertical-align: middle; }
         
         .q-col { 
@@ -37,6 +37,11 @@
             border: 2px solid white;
         }
 
+        /* 隱私檢視切換按鈕效果 */
+        .eye-btn { transition: all 0.2s; color: #94a3b8; cursor: pointer; }
+        .eye-btn:hover { color: #2563eb; transform: scale(1.2); }
+        .eye-btn.active { color: #2563eb; }
+
         @media print {
             .no-print { display: none !important; }
             body { background: white; padding: 0; }
@@ -56,7 +61,7 @@
 <!-- 即時警報顯示區 -->
 <div id="alarmContainer" class="fixed top-4 left-1/2 -translate-x-1/2 z-[10001] w-full max-w-2xl pointer-events-none no-print"></div>
 
-<div id="adminApp" class="max-w-[2100px] mx-auto print-compact">
+<div id="adminApp" class="max-w-[2200px] mx-auto print-compact">
     <!-- 登入介面 -->
     <div id="loginOverlay" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[9999] no-print transition-all duration-500">
         <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center border-t-8 border-blue-600">
@@ -76,7 +81,8 @@
     <header class="flex flex-col md:flex-row justify-between items-center mb-4 gap-2 no-print">
         <div>
             <h1 class="text-2xl font-black text-slate-900 uppercase">服務稽核報表 <span id="connTag" class="text-[10px] bg-slate-200 px-2 py-1 rounded ml-2 font-mono uppercase italic"></span></h1>
-            <p class="text-slate-400 text-xs font-bold italic">即時監控預警系統 V1.7.1 (前端即時連線模式)</p>
+            <!-- 修正：移除版本號與隱私模式字樣 -->
+            <p class="text-slate-400 text-xs font-bold italic">即時監控預警系統</p>
         </div>
         <div class="flex gap-2">
             <button onclick="exportReport()" class="bg-white border-2 px-5 py-2 rounded-xl font-black shadow-sm text-sm hover:bg-slate-50 transition">匯出 A2 報表</button>
@@ -103,7 +109,7 @@
         </div>
     </div>
 
-    <!-- 數據表格 -->
+    <!-- 數據表格 (隱私保護模式：顧客資訊預設遮罩) -->
     <div class="bg-white rounded-3xl shadow-sm border overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse min-w-[1600px] compact-table">
@@ -122,7 +128,7 @@
                         <th class="p-1 q-col text-green-700 bg-green-50/30">Q8 打卡</th>
                         <th class="p-1 q-col text-green-700 bg-green-50/30">Q9 名片</th>
                         <th class="p-1 q-col text-red-700 bg-red-50/30">Q10 老點</th>
-                        <th class="p-1 w-28">顧客資訊</th>
+                        <th class="p-1 w-36">顧客資訊</th>
                         <th class="p-1 w-20 text-center">行銷反饋</th>
                         <th class="p-1 text-center">狀態</th>
                         <th class="p-1">管理備註</th>
@@ -177,14 +183,19 @@
     let rawData = [];
     let currentDocId = null;
     let syncStarted = false;
+    let revealedIds = new Set();
+    let filteredCache = [];
 
-    // --- 全量語法權杖池 V1.7.1 ---
-    // 核心修正：加入英文 "No odor" 與日文 "少し危ない" 至正確池中
-    const posKeywords = ["主動介紹詢問", "主動詢問調整", "沒有異味", "服務很好", "良好有禮", "專業得體", "完全沒有", "熱情主動", "一定老點", "Definitely", "Proactive", "Excellent", "Polite", "Professional", "None", "No odor", "積極的", "丁寧", "適切", "なかった", "必ず指名", "적극 안내", "적극 확인", "없음", "만족", "정중함", "전문적", "꼭 지명"];
-    const neuKeywords = ["後來才問", "被動回應", "稍微有點", "普通尚可", "有點尷尬", "有點危險", "非常被動", "要了才給", "再試試看", "Maybe", "Later", "Passive", "Average", "Awkward", "Risky", "Requested", "後で", "受動的", "少し", "普通", "氣まずい", "少し危ない", "少し危難", "また試す", "求めたら", "나중에", "수動的", "약간", "보통", "당황함", "위험", "다시 시度", "요청 시"];
+    // --- 全量語法權杖池 V1.7.5 ---
+    const posKeywords = ["主動介紹詢問", "主動詢問調整", "沒有異味", "服務很好", "良好有禮", "專業得體", "完全沒有", "熱情主動", "一定老點", "Definitely", "Proactive", "Excellent", "Polite", "Professional", "None", "No odor", "積極的", "丁寧", "適切", "なかった", "必ず指名", "적극 안내", "적극 확인", "없음", "만족", "정중함", "전문적", "なし", "非常に良い", "적극적", "꼭 지명"];
+    const neuKeywords = ["後來才問", "被動回應", "稍微有點", "普通尚可", "有點尷尬", "有點危險", "非常被動", "要了才給", "再試試看", "Maybe", "Later", "Passive", "Average", "Awkward", "Risky", "Requested", "後で", "受動的", "少し", "普通", "氣まずい", "少し危ない", "少し危難", "また試す", "求めたら", "나중에", "수動的", "약간", "보통", "당황함", "위험", "다시 시度", "요청 시", "気まずい"];
     const negKeywords = ["完全沒問", "完全不問", "味道很重", "感覺很差", "言語不當", "非常危險", "完全沒說", "沒有給名片", "絕對不會", "No", "Strong", "Poor", "Impolite", "Dangerous", "Never", "非常に", "悪い", "失礼", "不快", "非常に危險", "しない", "심함", "불만", "무례", "불쾌", "매우 위험", "안 함"];
 
     const labels = { q1: "Q1. 開始介紹", q2: "Q2. 力道調整", q3: "Q3. 異味/煙味", q4: "Q4. 時間掌握", q5: "Q5. 服務禮貌", q6: "Q6. 肢體觸碰", q7: "Q7. 禁止動作", q8: "Q8. 打卡推廣", q9: "Q9. 提供名片", q10: "Q10. 老點意願" };
+
+    // 脫敏輔助
+    const maskName = (str) => { if(!str) return '-'; if(str.length <= 1) return '*'; if(str.length === 2) return str[0] + '*'; return str[0] + '*'.repeat(str.length - 2) + str[str.length - 1]; };
+    const maskPhone = (str) => { if(!str) return '-'; if(str.length < 7) return '***'; return str.substring(0, 4) + '***' + str.substring(str.length - 3); };
 
     function setDateRangeDefaults() {
         const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
@@ -203,18 +214,16 @@
 
     window.handleLogin = async () => { 
         const pass = document.getElementById('loginInput').value;
-        const statusText = document.getElementById('loginStatus');
         if(pass === 'admin888') { 
             try {
                 await setPersistence(auth, browserLocalPersistence);
                 sessionStorage.setItem('adminVerified', 'true');
-                statusText.innerText = "驗證通過，正在建立數據..."; 
-                statusText.classList.replace('text-slate-400', 'text-blue-500');
+                document.getElementById('loginStatus').innerText = "驗證通過，正在建立數據..."; 
                 document.getElementById('loginBtn').disabled = true;
                 await initAuth(); 
                 if (auth.currentUser) startSync();
-            } catch (err) { alert("無法設定長駐登入"); }
-        } else { alert("驗證密碼錯誤"); }
+            } catch (err) { alert("驗證設定異常"); }
+        } else { alert("密碼錯誤"); }
     };
 
     const initAuth = async () => {
@@ -227,14 +236,12 @@
 
     onAuthStateChanged(auth, user => { 
         const isVerified = sessionStorage.getItem('adminVerified') === 'true';
-        const info = document.getElementById('connTag');
         if(user && isVerified) {
-            info.innerText = "LIVE SYNCED";
-            info.className = "text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded font-black italic";
+            document.getElementById('connTag').innerText = "LIVE SYNCED";
+            document.getElementById('connTag').className = "text-[9px] bg-green-100 text-green-600 px-2 py-0.5 rounded font-black italic";
             startSync();
         } else {
-            info.innerText = "";
-            info.className = "";
+            document.getElementById('connTag').innerText = "";
         }
     });
 
@@ -247,23 +254,16 @@
     function startSync() {
         if (!auth.currentUser || sessionStorage.getItem('adminVerified') !== 'true' || syncStarted) return;
         syncStarted = true;
-        
         onSnapshot(collection(db, ...collectionPath), (sn) => {
             rawData = sn.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             updateDropdown(); filterData();
             document.getElementById('loadingSpin').classList.add('hidden');
-            
             const overlay = document.getElementById('loginOverlay');
-            if (overlay) {
-                overlay.style.opacity = '0';
-                setTimeout(() => overlay.classList.add('hidden'), 500);
-            }
+            if (overlay) { overlay.style.opacity = '0'; setTimeout(() => overlay.classList.add('hidden'), 500); }
         }, (err) => {
-            console.error("Firestore Error:", err);
-            document.getElementById('authDebug').innerText = `讀取失敗: 權限不足 (403)`;
+            document.getElementById('authDebug').innerText = "讀取失敗: 403";
             document.getElementById('authDebug').classList.remove('hidden');
             syncStarted = false; 
-            document.getElementById('loginBtn').disabled = false;
         });
     }
 
@@ -287,12 +287,10 @@
         updateAlarmUI(filtered); renderTable(filtered);
     };
 
-    // 核心修正：確保 handleAlarmClick 被綁定至 window 且 ID 路徑正確
     function updateAlarmUI(data) {
         const container = document.getElementById('alarmContainer');
         const pendingAlarms = data.filter(item => Object.values(item.ratings || {}).some(val => negKeywords.includes(val)) && item.adminStatus !== 'resolved');
         document.getElementById('activeAlarmNum').innerText = pendingAlarms.length;
-        
         if (pendingAlarms.length > 0) {
             const latest = pendingAlarms[0];
             container.innerHTML = `
@@ -302,29 +300,31 @@
                             <span>⚠️</span>
                             <div>
                                 <p class="font-black text-xs md:text-sm">師傅 ${latest.masseurId} 發現稽核異常項目！</p>
-                                <p class="text-[9px] opacity-90">顧客：${latest.customerName} | 日期：${latest.serviceDate || '今日'}</p>
+                                <p class="text-[9px] opacity-90">顧客：${maskName(latest.customerName)} | ${latest.serviceDate || '今日'}</p>
                             </div>
                         </div>
                         <button onclick="window.handleAlarmClick('${latest.id}')" class="bg-white text-red-600 px-4 py-2 rounded-xl font-black text-xs hover:scale-105 transition shadow-sm">立即處置</button>
                     </div>
                 </div>`;
-        } else {
-            container.innerHTML = '';
-        }
+        } else { container.innerHTML = ''; }
     }
 
-    // 將指令轉發至主處理程序
-    window.handleAlarmClick = (id) => {
-        window.showDetail(id, 'ALARM');
+    window.handleAlarmClick = (id) => { window.showDetail(id, 'ALARM'); };
+
+    window.toggleInfo = (id) => {
+        if(revealedIds.has(id)) revealedIds.delete(id); else revealedIds.add(id);
+        renderTable(filteredCache);
     };
 
     function renderTable(data) {
+        filteredCache = data;
         document.getElementById('statTotal').innerText = data.length;
         document.getElementById('reportTableBody').innerHTML = data.map((d, i) => {
             const ts = d.createdAt ? new Date(d.createdAt.seconds * 1000).toLocaleString('zh-TW', { hour12: false }) : 'Sync';
             const r = d.ratings || {};
             const isCritical = Object.values(r).some(v => negKeywords.includes(v));
             const isResolved = d.adminStatus === 'resolved';
+            const isRevealed = revealedIds.has(d.id);
             
             let label = '正常', color = 'bg-green-600';
             if (isResolved) { label = '完成'; color = 'bg-blue-600'; }
@@ -342,6 +342,9 @@
             if (d.marketingAction === 'Reviewed') marketingLabel = '<span class="text-amber-500 font-bold">★ 已點評論</span>';
             if (d.marketingAction === 'Dismissed') marketingLabel = '<span class="text-slate-400">下次再評</span>';
 
+            const displayName = isRevealed ? d.customerName : maskName(d.customerName);
+            const displayPhone = isRevealed ? d.customerPhone : maskPhone(d.customerPhone);
+
             return `<tr>
                 <td class="p-1 text-center font-black text-slate-300">${i + 1}</td>
                 <td class="p-1 font-mono text-[8px] text-slate-400">系:${ts}<br>服:${d.serviceDate || '-'}</td>
@@ -356,10 +359,20 @@
                 <td class="p-1 q-col ${getQStyle(r.q8)}">${r.q8 || '-'}</td>
                 <td class="p-1 q-col ${getQStyle(r.q9)}">${r.q9 || '-'}</td>
                 <td class="p-1 q-col ${getQStyle(r.q10)}">${r.q10 || '-'}</td>
-                <td class="p-1 font-bold text-slate-700 leading-tight">${d.customerName}<br><span class="text-[8px] text-slate-400 font-normal">${d.customerPhone || ''}</span></td>
+                <td class="p-1 leading-tight relative">
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.toggleInfo('${d.id}')" class="eye-btn no-print ${isRevealed ? 'active' : ''}">
+                            ${isRevealed ? '🔓' : '👁️'}
+                        </button>
+                        <div class="flex flex-col">
+                            <span class="font-bold text-slate-700">${displayName}</span>
+                            <span class="text-[8px] text-slate-400 font-mono">${displayPhone}</span>
+                        </div>
+                    </div>
+                </td>
                 <td class="p-1 text-center text-[8px]">${marketingLabel}</td>
                 <td class="p-1 text-center"><span class="status-tag text-[7px] px-1.5 py-0.5 rounded-full font-black text-white ${color}">${label}</span></td>
-                <td class="p-1 italic text-slate-500 max-w-[100px] truncate" title="${d.adminRemark || ''}">${d.adminRemark || '待標...'}</td>
+                <td class="p-1 italic text-slate-500 max-w-[100px] truncate">${d.adminRemark || '待標...'}</td>
                 <td class="p-1 no-print text-center"><button onclick="window.showDetail('${d.id}', ${i + 1})" class="bg-slate-800 text-white px-2 py-0.5 rounded-lg text-[9px] font-black hover:bg-blue-700 transition">管理</button></td>
             </tr>`;
         }).join('');
@@ -384,12 +397,18 @@
         currentDocId = docId; document.getElementById('modalId').innerText = (seq === 'ALARM') ? '警報' : `${seq}`;
         document.getElementById('adminRemarkInput').value = item.adminRemark || "";
         const r = item.ratings || {};
-        document.getElementById('modalContent').innerHTML = `<div class="grid grid-cols-2 gap-4"><div class="bg-slate-50 p-4 rounded-2xl border"><p class="text-[10px] text-slate-400 font-black mb-1 uppercase">稽核師傅</p><p class="text-2xl font-black text-blue-600 italic">${item.masseurId}</p></div><div class="bg-slate-50 p-4 rounded-2xl border"><p class="text-[10px] text-slate-400 font-black mb-1 uppercase">檢測結果</p><p class="text-lg font-bold ${Object.values(r).some(v=>negKeywords.includes(v))?'text-red-500':'text-green-600'}">${Object.values(r).some(v=>negKeywords.includes(v))?'發現異常項目':'數據正常'}</p></div></div><div class="space-y-1">${Object.keys(labels).map(k => `<div class="flex justify-between items-center p-2 border rounded-xl ${negKeywords.includes(r[k]) ? 'bg-red-50 border-red-200' : 'bg-white'} shadow-sm"><span class="text-slate-600 font-bold text-[10px]">${labels[k]}</span><span class="font-black text-[10px] ${negKeywords.includes(r[k]) ? 'text-red-600' : 'text-blue-600'}">${r[k] || '-'}</span></div>`).join('')}</div><div class="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p class="text-[9px] font-black text-amber-600 mb-1 uppercase">顧客建議原文</p><p class="text-xs text-slate-700 italic">"${item.suggestions || "無。"}"</p></div>`;
+        document.getElementById('modalContent').innerHTML = `
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-50 p-4 rounded-2xl border"><p class="text-[10px] text-slate-400 font-black mb-1 uppercase">稽核師傅</p><p class="text-2xl font-black text-blue-600 italic">${item.masseurId}</p></div>
+                <div class="bg-slate-50 p-4 rounded-2xl border"><p class="text-[10px] text-slate-400 font-black mb-1 uppercase">顧客資訊</p><p class="font-black text-slate-800">${item.customerName}<br><span class="text-xs font-mono">${item.customerPhone}</span></p></div>
+            </div>
+            <div class="space-y-1">${Object.keys(labels).map(k => `<div class="flex justify-between items-center p-2 border rounded-xl ${negKeywords.includes(r[k]) ? 'bg-red-50 border-red-200' : 'bg-white'} shadow-sm"><span class="text-slate-600 font-bold text-[10px]">${labels[k]}</span><span class="font-black text-[10px] ${negKeywords.includes(r[k]) ? 'text-red-600' : 'text-blue-600'}">${r[k] || '-'}</span></div>`).join('')}</div>
+            <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p class="text-[9px] font-black text-amber-600 mb-1 uppercase">顧客建議原文</p><p class="text-xs text-slate-700 italic">"${item.suggestions || "無。"}"</p></div>`;
         document.getElementById('detailModal').classList.replace('modal-inactive', 'modal-active');
     };
 
     window.closeModal = () => { document.getElementById('detailModal').classList.replace('modal-active', 'modal-inactive'); currentDocId = null; };
-    window.resetFilters = () => { setDateRangeDefaults(); document.getElementById('filterMasseur').value = 'all'; filterData(); };
+    window.resetFilters = () => { revealedIds.clear(); setDateRangeDefaults(); document.getElementById('filterMasseur').value = 'all'; filterData(); };
     window.onload = () => { setDateRangeDefaults(); document.getElementById('loginInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); }); document.getElementById('loginInput').focus(); };
 </script>
 </body>
