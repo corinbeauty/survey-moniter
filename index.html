@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>稽核監控中心 - 中清行館 V1.9.1</title>
+    <title>稽核監控中心 - 中清行館 V1.8.6 (Browser Alert & Filter Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
@@ -68,7 +68,7 @@
     <div id="loginOverlay" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[10010] no-print transition-all duration-500">
         <div class="bg-white p-8 rounded-[2rem] shadow-2xl w-full max-w-sm text-center border-t-8 border-blue-600">
             <h2 class="text-xl font-black mb-1 text-slate-800 italic uppercase tracking-tighter">管理主控台</h2>
-            <p class="text-[9px] text-slate-400 mb-6 font-bold uppercase">中清行館監控站 V1.9.1</p>
+            <p class="text-[9px] text-slate-400 mb-6 font-bold uppercase">中清行館監控站 V1.8.6</p>
             <div class="relative mb-4">
                 <input type="password" id="loginInput" placeholder="輸入管理密碼" class="w-full p-3 border-2 rounded-xl text-center text-lg font-bold outline-none focus:border-blue-500 shadow-inner">
             </div>
@@ -80,7 +80,7 @@
     <header class="flex justify-between items-end mb-1.5 px-1 no-print">
         <div>
             <h1 class="text-lg font-black text-slate-900 uppercase leading-none">服務稽核報表 <span id="connTag" class="text-[8px] bg-slate-200 px-1 py-0.5 rounded ml-1 font-mono italic text-slate-400">OFFLINE</span></h1>
-            <p class="text-slate-400 text-[8px] font-bold italic">V1.9.1 Database Reconnect Fix</p>
+            <p class="text-slate-400 text-[8px] font-bold italic">V1.8.6 Browser Visibility Alert System</p>
         </div>
         <div class="flex gap-1.5 items-center">
             <button onclick="openLogHistory()" class="bg-slate-800 text-green-400 border border-green-900/30 px-2.5 py-0.5 rounded-lg font-black shadow-sm text-[10px] hover:bg-black transition cursor-pointer flex items-center gap-1">
@@ -106,8 +106,8 @@
     </section>
 
     <div class="flex gap-1.5 mb-1.5 no-print">
-        <div class="bg-white px-3 py-1 rounded-xl shadow-sm border flex flex-col justify-center min-w-[130px]">
-            <p class="text-slate-400 text-[8px] font-bold uppercase leading-none mb-1">本期總量 (<span id="totalDateDisplay" class="text-blue-500 font-black">-</span>)</p>
+        <div class="bg-white px-3 py-1 rounded-xl shadow-sm border flex flex-col justify-center min-w-[80px]">
+            <p class="text-slate-400 text-[8px] font-bold uppercase leading-none mb-1">本期總量</p>
             <div class="flex items-center gap-2">
                 <h3 id="statTotal" class="text-lg font-black italic text-blue-600 leading-none">0</h3>
                 <div id="loadingSpin" class="animate-spin text-blue-600 text-[8px]">⌛</div>
@@ -141,11 +141,11 @@
                         <th class="q-col text-green-700 bg-green-50/20">Q8 打卡</th>
                         <th class="q-col text-green-700 bg-green-50/20">Q9 名片</th>
                         <th class="q-col text-red-700 bg-red-50/20">Q10 老點</th>
+                        <th class="w-20">顧客資訊</th>
                         <th class="w-14 text-center">行銷反饋</th>
                         <th class="w-10 text-center">狀態</th>
                         <th class="min-w-[120px]">管理備註</th>
                         <th class="w-10 no-print text-center">操作</th>
-                        <th class="w-20">顧客資訊</th> <!-- 顧客資訊已在最後欄位 -->
                     </tr>
                 </thead>
                 <tbody id="reportTableBody" class="text-[8.5px] divide-y"></tbody>
@@ -188,7 +188,6 @@
     import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // --- Firebase 安全配置 ---
     const firebaseConfig = {
         apiKey: "AIzaSyCuytMbR0wfPk0vChxqI66Zci0uJtGiizE",
         authDomain: "survey-c3aa5.firebaseapp.com",
@@ -201,8 +200,6 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    
-    // 修正回您指定的正常路徑：['apps', 'zhongqing-v1', 'surveys']
     const collectionPath = ['apps', 'zhongqing-v1', 'surveys'];
 
     let rawData = [];
@@ -217,10 +214,8 @@
 
     const maskName = (n) => !n ? '-' : (n.length<=1 ? n : (n.length===2 ? n[0]+'*' : n[0]+'*'.repeat(n.length-2)+n[n.length-1]));
     const maskPhone = (p) => !p ? '' : String(p).replace(/\s/g, '').substring(0,3)+'****'+String(p).slice(-3);
-    
-    // 個位數補 0 函數
-    const formatId = (id) => String(id).padStart(2, '0');
 
+    // --- 分頁抬頭警報系統 ---
     function updateBrowserTabStatus(pendingCount) {
         if (pendingCount > 0) {
             if (!titleAlertInterval) {
@@ -235,7 +230,7 @@
                 clearInterval(titleAlertInterval);
                 titleAlertInterval = null;
             }
-            document.title = "稽核監控中心 - 中清行館 V1.9.1";
+            document.title = "稽核監控中心 - 中清行館 V1.8.6";
         }
     }
 
@@ -280,15 +275,10 @@
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else { await signInAnonymously(auth); }
                 sessionStorage.setItem('adminVerified', 'true');
-                hideLoginUI();
                 startSync();
-            } catch (err) { 
-                loginBtn.disabled = false; 
-                logToUI(`Login Error: ${err.message}`, 'bg-red-900 text-white');
-            }
-        } else { 
-            alert("密碼錯誤"); 
-        }
+                hideLoginUI();
+            } catch (err) { loginBtn.disabled = false; }
+        } else { alert("密碼錯誤"); }
     };
 
     function hideLoginUI() {
@@ -319,20 +309,15 @@
         syncStarted = true;
         logToUI("Snapshot Listener Active.");
 
-        // 使用您指定的集合路徑
         onSnapshot(collection(db, ...collectionPath), (sn) => {
             logToUI(`Sync: Found ${sn.size} records.`, 'bg-blue-900 text-white');
             rawData = sn.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             updateDropdown(); 
             filterData();
-            const spin = document.getElementById('loadingSpin');
-            if(spin) spin.classList.add('hidden');
+            document.getElementById('loadingSpin').classList.add('hidden');
         }, (err) => {
             syncStarted = false;
-            logToUI(`Sync Error: ${err.code} - ${err.message}`, 'bg-red-900 text-white');
-            if (err.code === 'permission-denied') {
-                logToUI("存取遭拒：請確認資料庫權限與路徑是否相符。", 'bg-red-700 text-white');
-            }
+            logToUI(`Sync Error: ${err.code}`, 'bg-red-900 text-white');
         });
     }
 
@@ -341,10 +326,6 @@
         const end = document.getElementById('filterEnd').value;
         const mas = document.getElementById('filterMasseur').value;
         const status = document.getElementById('filterStatus').value;
-
-        // 更新本期總量日期顯示，已移除 "起" 字
-        const dateDisp = document.getElementById('totalDateDisplay');
-        if(dateDisp) dateDisp.innerText = start || '未設定';
 
         let filtered = rawData.filter(d => {
             const date = d.serviceDate || (d.createdAt ? new Date(d.createdAt.seconds*1000).toISOString().split('T')[0] : '');
@@ -363,7 +344,7 @@
         }).sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
         updateMasseurStats(filtered);
-        updateAlarmUI(rawData); 
+        updateAlarmUI(rawData); // 使用全域數據監測警報
         renderTable(filtered);
     };
 
@@ -376,7 +357,7 @@
         });
         document.getElementById('masseurStatsList').innerHTML = Object.entries(stats).map(([id, s]) => `
             <div class="flex items-center gap-1 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full shrink-0">
-                <span class="text-[9px] font-black text-blue-800 italic">#${formatId(id)}</span>
+                <span class="text-[9px] font-black text-blue-800 italic">#${id}</span>
                 <span class="text-[10px] font-black text-amber-600">${s.s}★</span>
                 <span class="text-[10px] font-black text-blue-500">${s.f}📝</span>
             </div>`).join('');
@@ -384,9 +365,9 @@
 
     function updateAlarmUI(allData) {
         const pending = allData.filter(d => Object.values(d.ratings || {}).some(v => negKeywords.includes(v)) && d.adminStatus !== 'resolved');
-        const activeNum = document.getElementById('activeAlarmNum');
-        if(activeNum) activeNum.innerText = pending.length;
+        document.getElementById('activeAlarmNum').innerText = pending.length;
         
+        // 更新瀏覽器分頁抬頭顯示
         updateBrowserTabStatus(pending.length);
 
         const container = document.getElementById('alarmContainer');
@@ -397,7 +378,7 @@
                     <div class="alarm-banner text-white px-4 py-1.5 rounded-xl flex justify-between items-center shadow-lg border-2 border-white">
                         <div class="flex items-center gap-2">
                             <span class="text-base animate-bounce">⚠️</span>
-                            <div><p class="font-black text-[11px]">師傅 ${formatId(d.masseurId)} 稽核異常！</p><p class="text-[8px] opacity-90">${maskName(d.customerName)} | 待處理：${pending.length} 筆</p></div>
+                            <div><p class="font-black text-[11px]">師傅 ${d.masseurId} 稽核異常！</p><p class="text-[8px] opacity-90">${maskName(d.customerName)} | 待處理：${pending.length} 筆</p></div>
                         </div>
                         <button onclick="window.showDetail('${d.id}', 'ALRT')" class="bg-white text-red-600 px-2 py-0.5 rounded-lg font-black text-[9px] shadow-sm cursor-pointer hover:bg-slate-100 transition">管理處置</button>
                     </div>
@@ -406,8 +387,7 @@
     }
 
     function renderTable(data) {
-        const statTotal = document.getElementById('statTotal');
-        if(statTotal) statTotal.innerText = data.length;
+        document.getElementById('statTotal').innerText = data.length;
         const body = document.getElementById('reportTableBody');
         if (data.length === 0) {
             body.innerHTML = '<tr><td colspan="18" class="py-10 text-center text-slate-400 font-bold italic font-mono uppercase tracking-widest">No matching records found</td></tr>';
@@ -422,17 +402,12 @@
             return `<tr>
                 <td class="text-center font-black text-slate-300">${i+1}</td>
                 <td class="font-mono text-[6.5px] text-slate-400">系:${ts}<br>服:${d.serviceDate || '-'}</td>
-                <td class="text-center"><span class="bg-slate-800 text-white px-1 py-0.5 rounded text-[9px] font-black italic">${formatId(d.masseurId)}</span></td>
+                <td class="text-center"><span class="bg-slate-800 text-white px-1 py-0.5 rounded text-[9px] font-black italic">${d.masseurId}</span></td>
                 ${Object.keys(labels).map(k => {
                     const v = r[k] || '-';
                     const color = negKeywords.includes(v) ? 'text-red-700 bg-red-50 font-black' : (v==='-' ? 'text-slate-200' : 'text-slate-600');
                     return `<td class="q-col ${color}">${v}</td>`;
                 }).join('')}
-                <td class="text-center text-[7px]">${d.marketingAction==='Reviewed'?'<span class="text-amber-500 font-bold">★ 評論</span>':'-'}</td>
-                <td class="text-center"><span class="text-[6.5px] px-1 py-0.5 rounded-full font-black text-white ${isResolved?'bg-blue-600':(isCritical?'bg-red-600 animate-pulse':'bg-green-600')}">${isResolved?'完成':(isCritical?'異常':'正常')}</span></td>
-                <td class="italic text-slate-500 truncate text-[7.5px]">${d.adminRemark || '待處置...'}</td>
-                <td class="no-print text-center"><button onclick="window.showDetail('${d.id}', ${i+1})" class="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded text-[7.5px] font-black hover:bg-blue-600 hover:text-white cursor-pointer transition">管理</button></td>
-                <!-- 顧客資訊移至最後欄位 -->
                 <td class="p-1">
                     <div class="flex items-center gap-1">
                         <div class="flex-1 min-w-0">
@@ -442,6 +417,10 @@
                         <button onclick="window.toggleReveal('${d.id}')" class="no-print p-0.5 cursor-pointer">${isRevealed ? '👁️‍🗨️' : '👁️'}</button>
                     </div>
                 </td>
+                <td class="text-center text-[7px]">${d.marketingAction==='Reviewed'?'<span class="text-amber-500 font-bold">★ 評論</span>':'-'}</td>
+                <td class="text-center"><span class="text-[6.5px] px-1 py-0.5 rounded-full font-black text-white ${isResolved?'bg-blue-600':(isCritical?'bg-red-600 animate-pulse':'bg-green-600')}">${isResolved?'完成':(isCritical?'異常':'正常')}</span></td>
+                <td class="italic text-slate-500 truncate text-[7.5px]">${d.adminRemark || '待處置...'}</td>
+                <td class="no-print text-center"><button onclick="window.showDetail('${d.id}', ${i+1})" class="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded text-[7.5px] font-black hover:bg-blue-600 hover:text-white cursor-pointer transition">管理</button></td>
             </tr>`;
         }).join('');
     }
@@ -456,7 +435,7 @@
         const isRevealed = revealedIds.has(docId);
         document.getElementById('modalContent').innerHTML = `
             <div class="grid grid-cols-2 gap-2">
-                <div class="bg-slate-50 p-3 rounded-xl border"><p class="text-[8px] text-slate-400 font-black mb-0.5">師傅 ID</p><p class="text-xl font-black text-blue-600">${formatId(item.masseurId)}</p></div>
+                <div class="bg-slate-50 p-3 rounded-xl border"><p class="text-[8px] text-slate-400 font-black mb-0.5">師傅 ID</p><p class="text-xl font-black text-blue-600">${item.masseurId}</p></div>
                 <div class="bg-slate-50 p-3 rounded-xl border">
                     <p class="text-[8px] text-slate-400 font-black mb-0.5 uppercase">顧客資訊</p>
                     <p class="text-lg font-bold">${isRevealed ? item.customerName : maskName(item.customerName)}</p>
@@ -479,7 +458,7 @@
     
     window.updateDropdown = () => {
         const ids = [...new Set(rawData.map(d => String(d.masseurId)))].sort((a,b) => parseInt(a)-parseInt(b));
-        document.getElementById('filterMasseur').innerHTML = '<option value="all">所有師傅</option>' + ids.map(id => `<option value="${id}">${formatId(id)}</option>`).join('');
+        document.getElementById('filterMasseur').innerHTML = '<option value="all">所有師傅</option>' + ids.map(id => `<option value="${id}">${id}</option>`).join('');
     };
 
     window.toggleReveal = (id) => {
@@ -490,19 +469,13 @@
     document.getElementById('resolveBtn').onclick = async () => {
         if(!currentDocId) return;
         try {
-            // 使用還原後的集合路徑進行更新
-            const docRef = doc(db, ...collectionPath, currentDocId);
-            await updateDoc(docRef, { 
+            await updateDoc(doc(db, 'apps', 'zhongqing-v1', 'surveys', currentDocId), { 
                 adminStatus: 'resolved', 
                 adminRemark: document.getElementById('adminRemarkInput').value || "已處理。", 
                 handledAt: serverTimestamp() 
             });
             closeModal('detailModal');
-            logToUI(`已完成處理：${currentDocId}`, 'bg-green-700 text-white');
-        } catch (e) { 
-            alert("更新失敗"); 
-            logToUI(`更新錯誤: ${e.message}`, 'bg-red-700 text-white');
-        }
+        } catch (e) { alert("更新失敗"); }
     };
 
     window.resetFilters = () => { 
@@ -516,19 +489,10 @@
 
     window.onload = () => {
         setDefaultDateToCurrentMonth();
-        const loginInp = document.getElementById('loginInput');
-        if(loginInp) {
-            loginInp.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') handleLogin();
-            });
-        }
-        logToUI("System: Logic V1.9.1 Ready.");
-        
-        // 檢查是否已在 session 中驗證
-        if(sessionStorage.getItem('adminVerified') === 'true') {
-            hideLoginUI();
-            startSync();
-        }
+        document.getElementById('loginInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
+        logToUI("System: Logic V1.8.6 Visibility Engine Ready.");
     };
 </script>
 </body>
